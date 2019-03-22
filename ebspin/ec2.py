@@ -127,25 +127,21 @@ class Ec2:
 
 
     def tag_volume(self, volume_id, volume_name, options):
-        try:
-            tags = [
-                    { 'Key': 'Name',         'Value': volume_name },
-                    { 'Key': 'UUID',         'Value': options.uuid }
-                ]
+        tags = [
+                { 'Key': 'Name',         'Value': volume_name },
+                { 'Key': 'UUID',         'Value': options.uuid }
+            ]
 
-            tags = [x for x in tags if x['Value'] is not None]
+        tags = [x for x in tags if x['Value'] is not None]
 
-            # Add the tags provided from the command line
-            for key, value in options.tags.items():
-                tags.append({'Key':key, 'Value':value})
+        # Add the tags provided from the command line
+        for key, value in options.tags.items():
+            tags.append({'Key':key, 'Value':value})
 
-            return self.client.create_tags(
-                    Resources=[ volume_id ],
-                    Tags=tags
-                )
-        except:
-            logging.exception("Failed to create tags")
-            return None
+        return self.client.create_tags(
+                Resources=[ volume_id ],
+                Tags=tags
+            )
 
 
     def tag_snapshot(self, snapshot_id, tags):
