@@ -4,23 +4,22 @@ class Ec2:
     session = None
     client = None
 
-    def __init__(self, session):
-        self.session = session
-        self.client = self.session.client('ec2')
+    def __init__(self, client):
+        self.client = client
 
     def get_latest_volume_id_available(self, uuid):
         filters = [
                 { "Name": 'tag-key',   "Values": [ 'UUID' ] },
                 { "Name": 'tag-value', "Values": [ uuid ] }
             ]
-        try:
-            volumes = self.client.describe_volumes(Filters=filters)['Volumes']
-            volumes = sorted(volumes, key=lambda ss:ss['CreateTime'])
-            volume = volumes.pop()
-            print("Volume state is {}".format(volume['State']))
-            return volume['VolumeId']
-        except:
+        volumes = self.client.describe_volumes(Filters=filters)['Volumes']
+        volumes = sorted(volumes, key=lambda ss:ss['CreateTime'])
+        if len(volumes) == 0:
+            logging.info("No volume found")
             return None
+        volume = volumes.pop()
+        logging.info("Volume state is {}".format(volume['State']))
+        return volume['VolumeId']
 
     def get_latest_snapshot_id(self, uuid):
         filters = [
@@ -29,12 +28,11 @@ class Ec2:
                 { 'Name': 'status',    'Values': ['completed'] }
             ]
 
-        try:
-            snapshots = self.client.describe_snapshots(Filters=filters)['Snapshots']
-            snapshot = sorted(snapshots, key=lambda ss:ss['StartTime']).pop()
-            return snapshot['SnapshotId']
-        except:
+        snapshots = self.client.describe_snapshots(Filters=filters)['Snapshots']
+        if len(snapshots) == 0:
             return None
+        snapshot = sorted(snapshots, key=lambda ss:ss['StartTime']).pop()
+        return snapshot['SnapshotId']
 
     def get_instance_name(self, instance_id):
         filters = [
@@ -45,7 +43,7 @@ class Ec2:
         try:
             result = self.client.describe_tags(Filters=filters)['Tags'][0]['Value']
             return result
-        except:
+        except IndexError:
             return None
 
     def get_volume_id(self, instance_id, uuid):
@@ -54,12 +52,10 @@ class Ec2:
                 { 'Name': 'tag:UUID', 'Values': [uuid] },
             ]
 
-        try:
-            result = self.client.describe_volumes(Filters=filters)
-            # return a list of volume_ids
-            volumes = [v['VolumeId'] for v in result['Volumes']]
-            return volumes
-        except:
+        result = self.client.describe_volumes(Filters=filters)
+        # return a list of volume_ids
+        volumes = [v['VolumeId'] for v in result['Volumes']]
+        if len(volumes) == 0:
             return None
 
     def get_volume_name(self, volume_id):
@@ -71,71 +67,63 @@ class Ec2:
     def get_volume_region(self, volume_id):
         try:
             return self.client.describe_volumes(VolumeIds=[volume_id])['Volumes'][0]['AvailabilityZone']
-        except:
+        except (KeyError, IndexError):
             return None
 
     def create_volume(self, size, volume_type, availability_zone, snapshot_id=None):
-        try:
-            if snapshot_id:
-                response = self.client.create_volume(
-                    Size=size,
-                    SnapshotId=snapshot_id,
-                    AvailabilityZone=availability_zone,
-                    VolumeType=volume_type
-                )
-            else:
-                response = self.client.create_volume(
-                    Size=size,
-                    AvailabilityZone=availability_zone,
-                    VolumeType=volume_type
-                )
+        if snapshot_id:
+            response = self.client.create_volume(
+                Size=size,
+                SnapshotId=snapshot_id,
+                AvailabilityZone=availability_zone,
+                VolumeType=volume_type
+            )
+        else:
+            response = self.client.create_volume(
+                Size=size,
+                AvailabilityZone=availability_zone,
+                VolumeType=volume_type
+            )
+        volume_id = response['VolumeId']
 
-            num = 0
-            while True:
-                if num >= 12:
-                    break
-
-                state = self.client.describe_volumes(VolumeIds=[response['VolumeId']])['Volumes'][0]['State']
-
-                if state != 'available':
-                    time.sleep(5)
-                    num += 1
-                    continue
-
-                return response['VolumeId']
-        except:
-            logging.exception("Failed to create volume")
-            return None
+        waiter = self.client.get_waiter('volume_available')
+        waiter.wait(
+            Filters=[
+                {
+                    'Name': 'attachment.status',
+                    'Values': [
+                        'available'
+                    ]
+                }
+            ],
+            VolumeIds=[volume_id]
+        )
+        return response['VolumeId']
 
 
     def create_snapshot(self, volume_id, extra_tags=None):
-        try:
-            snapshot_id = self.client.create_snapshot(VolumeId=volume_id)['SnapshotId']
-            tags = self.client.describe_volumes(VolumeIds=[volume_id])['Volumes'][0]['Tags']
+        snapshot_id = self.client.create_snapshot(VolumeId=volume_id)['SnapshotId']
+        tags = self.client.describe_volumes(VolumeIds=[volume_id])['Volumes'][0]['Tags']
 
-            if extra_tags:
-                for key, value in extra_tags.items():
-                    tags.append({'Key':key, 'Value':value})
+        if extra_tags:
+            for key, value in extra_tags.items():
+                tags.append({'Key':key, 'Value':value})
 
-            self.tag_snapshot(snapshot_id, tags)
+        self.tag_snapshot(snapshot_id, tags)
 
-            num = 0
-            while True:
-                if num >= 12:
-                    break
-
-                state = self.client.describe_snapshots(SnapshotIds=[snapshot_id])['Snapshots'][0]['State']
-
-                if state != 'completed':
-                    time.sleep(5)
-                    num += 1
-                    continue
-
-                return snapshot_id
-
-        except:
-            logging.exception("Failed to create snapshot")
-            return None
+        waiter = self.client.get_waiter('snapshot_completed')
+        waiter.wait(
+            Filters=[
+                {
+                    'Name': 'status',
+                    'Values': [
+                        'completed'
+                    ]
+                }
+            ],
+            SnapshotIds=[snapshot_id]
+        )
+        return snapshot_id
 
 
     def tag_volume(self, volume_id, volume_name, options):
@@ -171,29 +159,42 @@ class Ec2:
             return None
 
     def attach_volume(self, volume_id, instance_id, device):
-        try:
-            response = self.client.attach_volume(
-                VolumeId=volume_id,
-                InstanceId=instance_id,
-                Device=device
-            )
+        waiter = self.client.get_waiter('volume_available')
+        waiter.wait(
+            Filters=[
+                {
+                    'Name': 'attachment.status',
+                    'Values': [
+                        'available'
+                    ]
+                }
+            ],
+            VolumeIds=[volume_id]
+        )
 
-            num = 0
-            while True:
-                if num >= 12:
-                    break
+        logging.info('Volume is ready, attaching...')
+        response = self.client.attach_volume(
+            VolumeId=volume_id,
+            InstanceId=instance_id,
+            Device=device
+        )
 
-                try:
-                    state = self.client.describe_volumes(VolumeIds=[volume_id])['Volumes'][0]['Attachments'][0]['State']
-                except:
-                    logging.exception("Error getting state")
-
-                if state != 'attached':
-                    time.sleep(5)
-                    num += 1
-                    continue
-
-                return volume_id
-        except:
-            logging.exception("Failed to mount volume")
-            return None
+        waiter = self.client.get_waiter('volume_in_use')
+        waiter.wait(
+            Filters=[
+                {
+                    'Name': 'attachment.status',
+                    'Values': [
+                        'attached'
+                    ]
+                },
+                {
+                    'Name': 'attachment.instance-id',
+                    'Values': [
+                        instance_id
+                    ]
+                }
+            ],
+            VolumeIds=[volume_id]
+        )
+        return volume_id
