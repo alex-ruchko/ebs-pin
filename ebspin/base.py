@@ -11,7 +11,7 @@ class Base:
         self.options = options
         self.metadata = metadata
         self.session = boto3.Session(region_name=metadata['region'])
-        self.ec2 = ec2.Ec2(self.session)
+        self.ec2 = ec2.Ec2(self.session.client('ec2'))
 
     def attach(self):
         name = self.ec2.get_instance_name(self.metadata['instanceId']) or self.metadata['instanceId']
