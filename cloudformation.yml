@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: CloudFront for static website
+
+Parameters:
+  AMI:
+    Type: String
+  KeyName:
+    Type: String
+  AvailabilityZone:
+    Type: String
+  Subnets:
+    Type: List<AWS::EC2::Subnet::Id>
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+
+Rules:
+  SubnetsInVPC:
+    Assertions:
+      - Assert:
+          'Fn::EachMemberIn':
+            - 'Fn::ValueOfAll':
+                - 'AWS::EC2::Subnet::Id'
+                - VpcId
+            - 'Fn::RefAll': 'AWS::EC2::VPC::Id'
+        AssertDescription: All subnets must in the VPC
+
+Resources:
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${AWS::StackName}-LaunchTemplate"
+      LaunchTemplateData: 
+        ImageId: !Ref AMI
+        InstanceType: "t3.nano"
+        KeyName: !Ref KeyName
+        Monitoring:
+          Enabled: true
+        InstanceMarketOptions:
+          MarketType: "spot"
+          SpotOptions:
+            MaxPrice: "0.5"
+        IamInstanceProfile:
+          Arn:
+            !GetAtt InstanceProfile.Arn
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        UserData: !Base64
+          "Fn::Sub":
+            - |
+              #!/bin/bash -xe
+              trap 'poweroff' ERR
+              yum install -y /opt/aws/bin/cfn-signal
+              /usr/local/bin/ebs-pin attach -u ebs-pin-test
+              if ! blkid $(readlink -f /dev/xvdf) | grep ext4; then
+                  mkfs.ext4 /dev/xvdf
+              fi
+              mkdir -p /media/ebs-pin
+              mount /dev/xvdf /media/ebs-pin
+              echo "{\"timestamp\": \"$(date -Is)\", \"hostname\": \"${!HOSTNAME}\", \"Subnets\": \"${Subnets}\"}" >> /media/ebs-pin/hostnames
+              /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region} || true
+            - {"Subnets": !Join [',', !Ref Subnets]}
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 1
+        MinSuccessfulInstancesPercent: "80"
+        WaitOnResourceSignals: true
+        PauseTime: PT15M
+        SuspendProcesses:
+          - AlarmNotification
+          - ScheduledActions
+          - HealthCheck
+          - ReplaceUnhealthy
+          - AZRebalance
+      AutoScalingScheduledAction:
+        IgnoreUnmodifiedGroupSizeProperties: 'true'
+    Properties:
+      MaxSize: 1
+      DesiredCapacity: 1
+      MinSize: 1
+      MetricsCollection:
+        - Granularity: "1Minute"
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      VPCZoneIdentifier: !Ref Subnets
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "ebs-pin testing"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+          
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref IAMRole
+
+  IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: [ec2.amazonaws.com]
+          Action: ['sts:AssumeRole']
+      Path: /
+      Policies:
+        - PolicyName: ecs-service
+          PolicyDocument:
+            Statement:
+            - Effect: Allow
+              Action:
+                - ec2:CreateTags
+                - ec2:DescribeTags
+                - ec2:CreateSnapshot
+                - ec2:DescribeSnapshots
+                - ec2:DescribeVolumes
+                - ec2:CreateVolume
+                - ec2:AttachVolume
+              Resource: '*'
