@@ -20,7 +20,10 @@ setup(
         'python-dateutil>=2.6.0',
         'requests>=2.13.0',
         's3transfer>=0.1.10',
-        'six>=1.10.0'],
+        'six>=1.10.0',
+        'backoff>=1.8.0',
+        'cryptography==2.4.2'
+    ],
     keywords='ebs ebspin ebs-pin'
 )
 

@@ -172,6 +172,8 @@ def construct_context(subnet_id):
     return context
 
 try:
+    context = None
+
     builds = json.loads(open("manifest.json", 'r').read())['builds']
     
     ami = sorted(builds, key=lambda x: x['build_time'], reverse=True)[0]['artifact_id'].split(':')[1]
@@ -183,7 +185,7 @@ try:
             {
                 'Name': 'isDefault',
                 'Values': [
-                    True
+                    'true'
                 ]
             }
         ]
@@ -236,5 +238,6 @@ try:
 
     logging.info("Done!")
 finally:
-    action = destroy.Action(context, provider_builder=provider_builder)
-    action.run(tail=True, force=True)
+    if context:
+        action = destroy.Action(context, provider_builder=provider_builder)
+        action.run(tail=True, force=True)
