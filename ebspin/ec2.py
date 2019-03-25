@@ -216,9 +216,12 @@ class Ec2:
         if len(snapshots) > 0:
             for snapshot in snapshots:
                 logging.info("Deleting snapshot {}...".format(snapshot['SnapshotId']))
-                self.client.delete_snapshot(
-                    SnapshotId=snapshot['SnapshotId']
-                )
+                try:
+                    self.client.delete_snapshot(
+                        SnapshotId=snapshot['SnapshotId']
+                    )
+                except botocore.exceptions.ClientError as e:
+                    logging.critical('Failed to delete snapshot {}, error: {}'.format(volume['SnapshotId'], e.response))
             logging.info("Snapshots deleted.")
         else:
             logging.info("No snapshots detected.")
