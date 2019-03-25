@@ -12,6 +12,8 @@ import datetime
 class get_latest_volume_id_available_test(unittest.TestCase):
 
     def test_can_get_latest_volume_id(self):
+        """Returns latest volume even if it is in-use"""
+
         client = boto3.client('ec2')
         stubber = Stubber(client)
         response = {"Volumes": [
@@ -187,6 +189,128 @@ class create_volume_test(unittest.TestCase):
         with self.assertRaises(botocore.exceptions.WaiterError):
             ebspin_ec2.create_volume(10, "gp2", "ap-southeast-2a", "foo")
 
+class clean_old_volumes_test(unittest.TestCase):
+
+    @patch('time.sleep')
+    def test_can_clean_volumes(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        volumes = [
+            {"VolumeId": "1", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "2", "State": "available", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "3", "State": "available", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]}
+        ]
+        stubber.add_response('describe_volumes', {"Volumes": volumes})
+        stubber.add_response('delete_volume', [], {"VolumeId": "2"})
+        stubber.add_response('delete_volume', [], {"VolumeId": "3"})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_old_volumes("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc", "1")
+
+    @patch('time.sleep')
+    def test_can_handle_multiple_volumes_in_use(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        volumes = [
+            {"VolumeId": "1", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "2", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "3", "State": "available", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]}
+        ]
+        stubber.add_response('describe_volumes', {"Volumes": volumes})
+        stubber.add_client_error('delete_volume', service_error_code='VolumeInUse', expected_params={"VolumeId": "2"})
+        stubber.add_response('delete_volume', [], {"VolumeId": "3"})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_old_volumes("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc", "1")
+
+    @patch('time.sleep')
+    def test_no_old_volumes(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        volumes = [
+            {"VolumeId": "1", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+        ]
+        stubber.add_response('describe_volumes', {"Volumes": volumes})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_old_volumes("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc", "1")
+
+class clean_old_volumes_test(unittest.TestCase):
+
+    @patch('time.sleep')
+    def test_can_clean_volumes(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        volumes = [
+            {"VolumeId": "1", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "2", "State": "available", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "3", "State": "available", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]}
+        ]
+        stubber.add_response('describe_volumes', {"Volumes": volumes})
+        stubber.add_response('delete_volume', [], {"VolumeId": "2"})
+        stubber.add_response('delete_volume', [], {"VolumeId": "3"})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_old_volumes("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc", "1")
+
+    @patch('time.sleep')
+    def test_can_handle_multiple_volumes_in_use(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        volumes = [
+            {"VolumeId": "1", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "2", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"VolumeId": "3", "State": "available", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]}
+        ]
+        stubber.add_response('describe_volumes', {"Volumes": volumes})
+        stubber.add_client_error('delete_volume', service_error_code='VolumeInUse', expected_params={"VolumeId": "2"})
+        stubber.add_response('delete_volume', [], {"VolumeId": "3"})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_old_volumes("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc", "1")
+
+    @patch('time.sleep')
+    def test_no_old_volumes(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        volumes = [
+            {"VolumeId": "1", "State": "in-use", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+        ]
+        stubber.add_response('describe_volumes', {"Volumes": volumes})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_old_volumes("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc", "1")
+
+
+class clean_snapshots_test(unittest.TestCase):
+
+    @patch('time.sleep')
+    def test_can_clean_snapshots(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        snapshots = [
+            {"StartTime": datetime.datetime.now(), "State": "available", "SnapshotId": "old", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"StartTime": datetime.datetime.now() + datetime.timedelta(days=1), "State": "available", "SnapshotId": "new", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]},
+            {"StartTime": datetime.datetime.now() + datetime.timedelta(days=2), "State": "pending", "SnapshotId": "newest", "Tags": [{"Key": "UUID", "Value": "01c6b711-a7d4-4bdf-bb2b-10b4b60594bc"}]}
+        ]
+        stubber.add_response('describe_snapshots', {"Snapshots": snapshots})
+        stubber.add_response('delete_snapshot', [], {"SnapshotId": "old"})
+        stubber.add_response('delete_snapshot', [], {"SnapshotId": "new"})
+        stubber.add_response('delete_snapshot', [], {"SnapshotId": "newest"})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_snapshots("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc")
+
+    @patch('time.sleep')
+    def test_no_snapshots(self, mock_sleep):
+        client = boto3.client('ec2')
+        stubber = Stubber(client)
+        snapshots = [
+        ]
+        stubber.add_response('describe_snapshots', {"Snapshots": snapshots})
+        stubber.activate()
+        ebspin_ec2 = ec2.Ec2(client)
+        ebspin_ec2.clean_snapshots("01c6b711-a7d4-4bdf-bb2b-10b4b60594bc")
 
 class base_attach_test(unittest.TestCase):
 
@@ -196,6 +320,8 @@ class base_attach_test(unittest.TestCase):
     @patch('ebspin.ec2.Ec2.create_volume', return_value="foobar")
     @patch('ebspin.ec2.Ec2.tag_volume', return_value=[])
     @patch('ebspin.ec2.Ec2.attach_volume', return_value="barfoo")
+    @patch('ebspin.ec2.Ec2.clean_old_volumes')
+    @patch('ebspin.ec2.Ec2.clean_snapshots')
     def test_can_attach_new_volume(self, *args):
         client = boto3.client('ec2')
         stubber = Stubber(client)
@@ -217,6 +343,8 @@ class base_attach_test(unittest.TestCase):
     @patch('ebspin.ec2.Ec2.get_latest_volume_id_available', return_value="foo")
     @patch('ebspin.ec2.Ec2.get_volume_region', return_value="ap-southeast-2a")
     @patch('ebspin.ec2.Ec2.attach_volume', return_value="barfoo")
+    @patch('ebspin.ec2.Ec2.clean_old_volumes')
+    @patch('ebspin.ec2.Ec2.clean_snapshots')
     def test_can_attach_existing_volume_in_same_az(self, *args):
         client = boto3.client('ec2')
         stubber = Stubber(client)
@@ -241,6 +369,8 @@ class base_attach_test(unittest.TestCase):
     @patch('ebspin.ec2.Ec2.create_volume', return_value="my_volume")
     @patch('ebspin.ec2.Ec2.tag_volume', return_value=[])
     @patch('ebspin.ec2.Ec2.attach_volume', return_value="my_volume")
+    @patch('ebspin.ec2.Ec2.clean_old_volumes')
+    @patch('ebspin.ec2.Ec2.clean_snapshots')
     def test_can_attach_existing_volume_in_other_az(self, *args):
         client = boto3.client('ec2')
         stubber = Stubber(client)
@@ -264,6 +394,8 @@ class base_attach_test(unittest.TestCase):
     @patch('ebspin.ec2.Ec2.create_volume', return_value="my_volume")
     @patch('ebspin.ec2.Ec2.tag_volume', return_value=[])
     @patch('ebspin.ec2.Ec2.attach_volume', return_value="my_volume")
+    @patch('ebspin.ec2.Ec2.clean_old_volumes')
+    @patch('ebspin.ec2.Ec2.clean_snapshots')
     def test_can_attach_volume_from_snapshot(self, *args):
         client = boto3.client('ec2')
         stubber = Stubber(client)
