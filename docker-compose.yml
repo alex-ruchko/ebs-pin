@@ -9,3 +9,13 @@ services:
       - .:/work:Z
       - ~/.ssh:/root/.ssh:Z
       - ~/.aws:/root/.aws:Z
+
+  python:
+    image: python:3-alpine
+    entrypoint: []
+    env_file: .env
+    working_dir: /work
+    volumes:
+      - .:/work:Z
+      - ~/.ssh:/root/.ssh:Z
+      - ~/.aws:/root/.aws:Z

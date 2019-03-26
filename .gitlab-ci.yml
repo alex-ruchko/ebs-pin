@@ -1,0 +1,24 @@
+image: flemay/musketeers:latest
+services:
+  - docker:dind
+
+variables:
+  DOCKER_HOST: "tcp://docker:2375"
+
+stages:
+  - image
+  - e2e
+
+image:
+  stage: image
+  script:
+    - make image
+  artifacts:
+    paths:
+      - manifest.json
+    expire_in: 1 week
+
+e2e:
+  stage: e2e
+  script:
+    - make e2e
