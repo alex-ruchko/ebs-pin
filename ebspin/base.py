@@ -44,10 +44,8 @@ class Base:
                 logging.info("Created volume: %s" % volume_id)
 
                 logging.info("Tagging volume...")
-                if self.ec2.tag_volume(volume_id, volume_name, self.options):
-                    logging.info("Volume tagged.")
-                else:
-                    logging.warning("Volume failed tagging.")
+                self.ec2.tag_volume(volume_id, volume_name, self.options)
+                logging.info("Volume tagged.")
             else:
                 logging.error("Volume failed creation.")
                 sys.exit(1)
@@ -59,6 +57,9 @@ class Base:
             else:
                 logging.info('Volume attachment failed.')
                 sys.exit(1)
+
+        self.ec2.clean_old_volumes(self.options.uuid, volume_id)
+        self.ec2.clean_snapshots(self.options.uuid)
 
     def snapshot(self):
         logging.info("Finding volumes...")

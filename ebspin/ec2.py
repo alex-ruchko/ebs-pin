@@ -1,4 +1,6 @@
 import time, logging, sys
+import backoff
+import botocore
 
 class Ec2:
     session = None
@@ -88,14 +90,6 @@ class Ec2:
 
         waiter = self.client.get_waiter('volume_available')
         waiter.wait(
-            Filters=[
-                {
-                    'Name': 'attachment.status',
-                    'Values': [
-                        'available'
-                    ]
-                }
-            ],
             VolumeIds=[volume_id]
         )
         return response['VolumeId']
@@ -127,25 +121,21 @@ class Ec2:
 
 
     def tag_volume(self, volume_id, volume_name, options):
-        try:
-            tags = [
-                    { 'Key': 'Name',         'Value': volume_name },
-                    { 'Key': 'UUID',         'Value': options.uuid }
-                ]
+        tags = [
+                { 'Key': 'Name',         'Value': volume_name },
+                { 'Key': 'UUID',         'Value': options.uuid }
+            ]
 
-            tags = [x for x in tags if x['Value'] is not None]
+        tags = [x for x in tags if x['Value'] is not None]
 
-            # Add the tags provided from the command line
-            for key, value in options.tags.items():
-                tags.append({'Key':key, 'Value':value})
+        # Add the tags provided from the command line
+        for key, value in options.tags.items():
+            tags.append({'Key':key, 'Value':value})
 
-            return self.client.create_tags(
-                    Resources=[ volume_id ],
-                    Tags=tags
-                )
-        except:
-            logging.exception("Failed to create tags")
-            return None
+        return self.client.create_tags(
+                Resources=[ volume_id ],
+                Tags=tags
+            )
 
 
     def tag_snapshot(self, snapshot_id, tags):
@@ -161,14 +151,6 @@ class Ec2:
     def attach_volume(self, volume_id, instance_id, device):
         waiter = self.client.get_waiter('volume_available')
         waiter.wait(
-            Filters=[
-                {
-                    'Name': 'attachment.status',
-                    'Values': [
-                        'available'
-                    ]
-                }
-            ],
             VolumeIds=[volume_id]
         )
 
@@ -198,3 +180,48 @@ class Ec2:
             VolumeIds=[volume_id]
         )
         return volume_id
+
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+    def clean_old_volumes(self, uuid, volume_id):
+        """Delete all volumes matching UUID, except the one currently attached"""
+
+        logging.info("Deleting old volumes...")
+        filters = [
+                { "Name": 'tag-key',   "Values": [ 'UUID' ] },
+                { "Name": 'tag-value', "Values": [ uuid ] }
+            ]
+        volumes = self.client.describe_volumes(Filters=filters)['Volumes']
+        old_volumes = [x for x in volumes if x['VolumeId'] != volume_id]
+        if len(old_volumes) > 0:
+            for volume in old_volumes:
+                logging.info("Deleting volume {}...".format(volume['VolumeId']))
+                try:
+                    self.client.delete_volume(VolumeId=volume['VolumeId'])
+                except botocore.exceptions.ClientError as e:
+                    logging.critical('Failed to delete volume {}, error: {}'.format(volume['VolumeId'], e.response))
+            logging.info("Old volumes deleted.")
+        else:
+            logging.info("No old volumes detected.")
+
+    @backoff.on_exception(backoff.expo, Exception, max_tries=3)
+    def clean_snapshots(self, uuid):
+        """Delete all snapshots matching UUID"""
+
+        logging.info("Deleting snapshots...")
+        filters = [
+            { 'Name': 'tag-key',   'Values': ['UUID'] },
+            { 'Name': 'tag-value', 'Values': [ uuid ] }
+        ]
+        snapshots = self.client.describe_snapshots(Filters=filters)['Snapshots']
+        if len(snapshots) > 0:
+            for snapshot in snapshots:
+                logging.info("Deleting snapshot {}...".format(snapshot['SnapshotId']))
+                try:
+                    self.client.delete_snapshot(
+                        SnapshotId=snapshot['SnapshotId']
+                    )
+                except botocore.exceptions.ClientError as e:
+                    logging.critical('Failed to delete snapshot {}, error: {}'.format(volume['SnapshotId'], e.response))
+            logging.info("Snapshots deleted.")
+        else:
+            logging.info("No snapshots detected.")

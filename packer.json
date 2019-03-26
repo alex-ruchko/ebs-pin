@@ -1,0 +1,33 @@
+{
+  "builders": [{
+    "type": "amazon-ebs",
+    "region": "ap-southeast-2",
+    "source_ami": "ami-065d66d47fcd4dfc2",
+    "instance_type": "c5.large",
+    "ssh_username": "ec2-user",
+    "ami_name": "ebs-pin-test-{{timestamp}}",
+    "tags": {"Builder": "Packer"}
+  }],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": ["mkdir -p /tmp/ebs-pin"]
+    },
+	{
+	  "type": "file",
+	  "source": ".",
+	  "destination": "/tmp/ebs-pin"
+	},
+    {
+      "type": "shell",
+      "execute_command": "/bin/chmod +x '{{.Path}}'; /usr/bin/sudo -E -S /bin/bash -c '{{.Vars}} {{.Path}}'",
+      "scripts": ["provision.sh"]
+    }
+  ],
+  "post-processors": [{
+    "type": "manifest",
+    "output": "manifest.json",
+    "strip_path": true
+  }]
+}
+
