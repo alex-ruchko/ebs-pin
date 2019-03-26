@@ -153,7 +153,7 @@ def construct_context(subnet_id):
         "stacks": [
             {
                 "name": "ebs-pin-test",
-                "template_path": "./cloudformation.yml",
+                "template_path": "./e2e/cloudformation.yml",
                 "variables": {
                     "AvailabilityZone": "ap-southeast-2a",
                     "AMI": ami,
