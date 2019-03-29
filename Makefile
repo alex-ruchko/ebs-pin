@@ -9,3 +9,8 @@ image:
 
 e2e:
 	docker-compose run --rm python python3 ./e2e/e2e.py
+
+venv:
+	python3 -m venv --copies venv
+	sed -i '43s/.*/VIRTUAL_ENV="$$(cd "$$(dirname "$$(dirname "$${BASH_SOURCE[0]}" )")" \&\& pwd)"/' venv/bin/activate
+	sed -i '1s/.*/#!\/usr\/bin\/env python/' venv/bin/pip*
