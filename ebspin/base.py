@@ -1,5 +1,8 @@
-import boto3, logging, sys
+import sys
+import logging
+import boto3
 import ebspin.ec2 as ec2
+
 
 class Base:
     options = None
@@ -88,25 +91,3 @@ class Base:
                     logging.error("Volume %s failed tagging." % volume_id)
         else:
             logging.info("No volumes found")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            #

@@ -1,6 +1,7 @@
-import time, logging, sys
+import logging
 import backoff
 import botocore
+
 
 class Ec2:
     session = None
@@ -11,11 +12,11 @@ class Ec2:
 
     def get_latest_volume_id_available(self, uuid):
         filters = [
-                { "Name": 'tag-key',   "Values": [ 'UUID' ] },
-                { "Name": 'tag-value', "Values": [ uuid ] }
+                {"Name": 'tag-key',   "Values": ['UUID']},
+                {"Name": 'tag-value', "Values": [uuid]}
             ]
         volumes = self.client.describe_volumes(Filters=filters)['Volumes']
-        volumes = sorted(volumes, key=lambda ss:ss['CreateTime'])
+        volumes = sorted(volumes, key=lambda ss: ss['CreateTime'])
         if len(volumes) == 0:
             logging.info("No volume found")
             return None
@@ -25,21 +26,21 @@ class Ec2:
 
     def get_latest_snapshot_id(self, uuid):
         filters = [
-                { 'Name': 'tag-key',   'Values': ['UUID'] },
-                { 'Name': 'tag-value', 'Values': [ uuid ] },
-                { 'Name': 'status',    'Values': ['completed'] }
+                {'Name': 'tag-key',   'Values': ['UUID']},
+                {'Name': 'tag-value', 'Values': [uuid]},
+                {'Name': 'status',    'Values': ['completed']}
             ]
 
         snapshots = self.client.describe_snapshots(Filters=filters)['Snapshots']
         if len(snapshots) == 0:
             return None
-        snapshot = sorted(snapshots, key=lambda ss:ss['StartTime']).pop()
+        snapshot = sorted(snapshots, key=lambda ss: ss['StartTime']).pop()
         return snapshot['SnapshotId']
 
     def get_instance_name(self, instance_id):
         filters = [
-                { "Name": 'resource-id', "Values": [ instance_id ] },
-                { "Name": 'key',         "Values": [ 'Name' ] }
+                {"Name": 'resource-id', "Values": [instance_id]},
+                {"Name": 'key',         "Values": ['Name']}
             ]
 
         try:
@@ -50,8 +51,8 @@ class Ec2:
 
     def get_volume_id(self, instance_id, uuid):
         filters = [
-                { 'Name': 'attachment.instance-id', 'Values': [instance_id] },
-                { 'Name': 'tag:UUID', 'Values': [uuid] },
+                {'Name': 'attachment.instance-id', 'Values': [instance_id]},
+                {'Name': 'tag:UUID', 'Values': [uuid]},
             ]
 
         result = self.client.describe_volumes(Filters=filters)
@@ -94,14 +95,13 @@ class Ec2:
         )
         return response['VolumeId']
 
-
     def create_snapshot(self, volume_id, extra_tags=None):
         snapshot_id = self.client.create_snapshot(VolumeId=volume_id)['SnapshotId']
         tags = self.client.describe_volumes(VolumeIds=[volume_id])['Volumes'][0]['Tags']
 
         if extra_tags:
             for key, value in extra_tags.items():
-                tags.append({'Key':key, 'Value':value})
+                tags.append({'Key': key, 'Value': value})
 
         self.tag_snapshot(snapshot_id, tags)
 
@@ -119,34 +119,28 @@ class Ec2:
         )
         return snapshot_id
 
-
     def tag_volume(self, volume_id, volume_name, options):
         tags = [
-                { 'Key': 'Name',         'Value': volume_name },
-                { 'Key': 'UUID',         'Value': options.uuid }
+                {'Key': 'Name',         'Value': volume_name},
+                {'Key': 'UUID',         'Value': options.uuid}
             ]
 
         tags = [x for x in tags if x['Value'] is not None]
 
         # Add the tags provided from the command line
         for key, value in options.tags.items():
-            tags.append({'Key':key, 'Value':value})
+            tags.append({'Key': key, 'Value': value})
 
         return self.client.create_tags(
-                Resources=[ volume_id ],
+                Resources=[volume_id],
                 Tags=tags
             )
-
 
     def tag_snapshot(self, snapshot_id, tags):
-        try:
-            return self.client.create_tags(
-                Resources=[snapshot_id],
-                Tags=tags
-            )
-        except:
-            logging.exception("Failed to create_tags %s" % tags)
-            return None
+        return self.client.create_tags(
+            Resources=[snapshot_id],
+            Tags=tags
+        )
 
     def attach_volume(self, volume_id, instance_id, device):
         waiter = self.client.get_waiter('volume_available')
@@ -155,7 +149,7 @@ class Ec2:
         )
 
         logging.info('Volume is ready, attaching...')
-        response = self.client.attach_volume(
+        self.client.attach_volume(
             VolumeId=volume_id,
             InstanceId=instance_id,
             Device=device
@@ -187,8 +181,8 @@ class Ec2:
 
         logging.info("Deleting old volumes...")
         filters = [
-                { "Name": 'tag-key',   "Values": [ 'UUID' ] },
-                { "Name": 'tag-value', "Values": [ uuid ] }
+                {"Name": 'tag-key',   "Values": ['UUID']},
+                {"Name": 'tag-value', "Values": [uuid]}
             ]
         volumes = self.client.describe_volumes(Filters=filters)['Volumes']
         old_volumes = [x for x in volumes if x['VolumeId'] != volume_id]
@@ -209,8 +203,8 @@ class Ec2:
 
         logging.info("Deleting snapshots...")
         filters = [
-            { 'Name': 'tag-key',   'Values': ['UUID'] },
-            { 'Name': 'tag-value', 'Values': [ uuid ] }
+            {'Name': 'tag-key',   'Values': ['UUID']},
+            {'Name': 'tag-value', 'Values': [uuid]}
         ]
         snapshots = self.client.describe_snapshots(Filters=filters)['Snapshots']
         if len(snapshots) > 0:
@@ -221,7 +215,7 @@ class Ec2:
                         SnapshotId=snapshot['SnapshotId']
                     )
                 except botocore.exceptions.ClientError as e:
-                    logging.critical('Failed to delete snapshot {}, error: {}'.format(volume['SnapshotId'], e.response))
+                    logging.critical('Failed to delete snapshot {}, error: {}'.format(snapshot['SnapshotId'], e.response))
             logging.info("Snapshots deleted.")
         else:
             logging.info("No snapshots detected.")
