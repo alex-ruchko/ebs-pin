@@ -220,8 +220,8 @@ class Ec2:
                     except botocore.exceptions.ClientError as e:
                         logging.critical('Failed to delete snapshot {}, error: {}'.format(snapshot['SnapshotId'], e.response))
                 else:
-                    unexpected_tags = actual_tag_keys - expected_tag_keys
-                    logging.info("Snapshot {} had additional unknown tags ({}), skipping.".format(snapshot['SnapshotId'], unexpected_tags))
+                    unexpected_tags = actual_tag_keys.symmetric_difference(expected_tag_keys)
+                    logging.info("Snapshot {} had different tags ({}), skipping.".format(snapshot['SnapshotId'], unexpected_tags))
             logging.info("Snapshots deleted.")
         else:
             logging.info("No snapshots detected.")

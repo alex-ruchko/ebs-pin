@@ -317,6 +317,7 @@ class clean_snapshots_test(unittest.TestCase):
             {"Key": "Team", "Value": "DevOps"},  # additional tag specified on CLI
         ]
         snapshots = [
+            {"StartTime": datetime.datetime.now(), "State": "available", "SnapshotId": "reallyold", "Tags": [x for x in tags if x["Key"] != "Team"]},  # if a new tag gets added to CLI
             {"StartTime": datetime.datetime.now(), "State": "available", "SnapshotId": "old", "Tags": tags},
             {"StartTime": datetime.datetime.now() + datetime.timedelta(days=1), "State": "available", "SnapshotId": "new", "Tags": tags},
             {"StartTime": datetime.datetime.now() + datetime.timedelta(days=2), "State": "pending", "SnapshotId": "newest", "Tags": list(reversed(tags))},  # tag order may not be deterministic?
