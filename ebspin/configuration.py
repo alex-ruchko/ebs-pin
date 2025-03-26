@@ -1,23 +1,33 @@
 import requests, json, logging
 
+
 class Configuration:
     def metadata(self):
+        headers = {}
         try:
-            r = requests.get('http://169.254.169.254/latest/dynamic/instance-identity/document', timeout=1)
-            return r.json()
-        except requests.exceptions.ConnectionError:
-            logging.error("Simulation mode enabled.")
-            return {
-                  "privateIp" : "10.123.26.236",
-                  "devpayProductCodes" : None,
-                  "availabilityZone" : "ap-southeast-2a",
-                  "version" : "2010-08-31",
-                  "region" : "ap-southeast-2",
-                  "instanceId" : "i-04ec586a0e91b640c",
-                  "instanceType" : "t2.medium",
-                  "pendingTime" : "2017-02-13T05:57:33Z",
-                  "imageId" : "ami-1aefee79",
-                  "architecture" : "x86_64",
-                  "kernelId" : None,
-                  "ramdiskId" : None
-                }
+            r = requests.get(
+                "http://169.254.169.254/latest/api/token",
+                headers={"X-aws-ec2-metadata-token-ttl-seconds": "21600"},
+                timeout=1,
+            )
+            token = r.text
+            headers = {"X-aws-ec2-metadata-token": token}
+            r.raise_for_status()
+        except Exception:
+            logger.warning(
+                "Couldn't get IMDSv2 token, attempting to get instance ID without it..."
+            )
+            pass
+
+        try:
+            r = requests.get(
+                "http://169.254.169.254/latest/dynamic/instance-identity/document",
+                headers=headers,
+                timeout=1,
+            )
+            r.raise_for_status()
+            metadata = r.json()
+            return metadata
+        except json.decoder.JSONDecodeError as e:
+            logging.error("Error decoding metadata: %s" % r.text)
+            raise e
