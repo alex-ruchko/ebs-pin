@@ -14,7 +14,7 @@ class Configuration:
             headers = {"X-aws-ec2-metadata-token": token}
             r.raise_for_status()
         except Exception:
-            logger.warning(
+            logging.warning(
                 "Couldn't get IMDSv2 token, attempting to get instance ID without it..."
             )
             pass
